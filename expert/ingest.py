@@ -38,6 +38,8 @@ DOC_KEYWORDS = ("physics", "physx", "joint", "collision", "solver", "rigid", "ar
                 "workflow", "troubleshooting", "omni", "control", "tutorial", "tutorials",
                 "experimental", "deformable")
 HEADERS = {"User-Agent": "IsaacPhysicsExpert/0.2 (local research; respect site rate limits)"}
+PUBLIC_EXAMPLES = ROOT / "notes" / "isaac-examples"
+PUBLIC_EXAMPLE_FAMILY = "public_example"
 
 
 def get_collection(reset: bool = False):
@@ -180,7 +182,7 @@ def walk_sources(folder: Path):
 
 def insert_source(collection, source: str, title: str, version: str,
                   product: str, content: str, kind: str, family: str,
-                  lab_version: str = "none") -> int:
+                  lab_version: str = "none", *, revision: str = "") -> int:
     parts = chunks(content)
     if not parts:
         return 0
@@ -189,21 +191,56 @@ def insert_source(collection, source: str, title: str, version: str,
     vectors = []
     for start in range(0, len(parts), 16):
         vectors.extend(ollama.embed(model=EMBED_MODEL, input=parts[start:start + 16]).embeddings)
-    old = collection.get(where={"source_id": source_id}, include=[])
-    old_ids = old.get("ids", [])
-    if old_ids:
-        collection.delete(ids=old_ids)
     stamp = datetime.now(timezone.utc).isoformat()
     for start in range(0, len(parts), 80):
         batch = parts[start:start + 80]
         ids = [f"{source_id}-{i}" for i in range(start, start + len(batch))]
         metadata = [dict(source=source, source_id=source_id, title=title,
                          version=version, product=product, family=family,
-                         lab_version=lab_version, kind=kind, chunk=i, indexed_at=stamp)
+                         lab_version=lab_version, kind=kind, chunk=i, indexed_at=stamp,
+                         revision=revision)
                     for i in range(start, start + len(batch))]
         collection.upsert(ids=ids, embeddings=vectors[start:start + len(batch)],
                           documents=batch, metadatas=metadata)
+    stale = collection.get(where={"$and": [
+        {"source_id": source_id}, {"chunk": {"$gte": len(parts)}},
+    ]}, include=[])["ids"]
+    if stale:
+        collection.delete(ids=stale)
     return len(parts)
+
+
+def sync_public_examples(collection, version: str) -> bool:
+    """Refresh the published Markdown for this version in the local index."""
+    folder = PUBLIC_EXAMPLES / version
+    where = {"$and": [{"family": PUBLIC_EXAMPLE_FAMILY}, {"version": version}]}
+    indexed = collection.get(where=where, include=["metadatas"])
+    by_source = {}
+    for record_id, metadata in zip(indexed["ids"], indexed["metadatas"], strict=True):
+        by_source.setdefault(metadata["source"], []).append((record_id, metadata))
+
+    has_examples = False
+    for path in sorted(folder.glob("*.md")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        content = path.read_text(encoding="utf-8").strip()
+        parts = chunks(content)
+        if not parts:
+            continue
+        has_examples = True
+        source = path.relative_to(ROOT).as_posix()
+        revision = sha256(content.encode()).hexdigest()
+        current = by_source.pop(source, [])
+        if len(current) == len(parts) and all(item["revision"] == revision for _, item in current):
+            continue
+        title = content.splitlines()[0].removeprefix("# ")
+        insert_source(collection, source, title, version, "Isaac Sim engineering examples",
+                      content, PUBLIC_EXAMPLE_FAMILY, PUBLIC_EXAMPLE_FAMILY, revision=revision)
+
+    obsolete = [record_id for records in by_source.values() for record_id, _ in records]
+    if obsolete:
+        collection.delete(ids=obsolete)
+    return has_examples
 
 
 def crawl_group(collection, group: dict, max_pages: int | None = None,
