@@ -1,0 +1,320 @@
+"""Index official versioned Isaac/PhysX/USD documentation and local project files.
+
+This is a READ-ONLY source ingestion tool. It does not import/run Isaac Sim,
+execute commands found online, or edit the user's source projects.
+"""
+from __future__ import annotations
+import argparse
+from collections import deque
+from datetime import datetime, timezone
+from hashlib import sha256
+import json
+import os
+from pathlib import Path
+import re
+import time
+from urllib.parse import urljoin, urlparse, urlunparse
+
+import chromadb
+import ollama
+import requests
+from bs4 import BeautifulSoup
+from pypdf import PdfReader
+
+from expert.common import DB_DIR, COLLECTION, EMBED_MODEL, ROOT, chunks
+
+IGNORE_DIRS = {".git", ".venv", ".venv-train", "venv", "build", "install", "node_modules",
+               "__pycache__", ".pytest_cache", "chroma_db", "results", "logs", "cache"}
+SUFFIXES = {".md", ".py", ".toml", ".yaml", ".yml", ".txt", ".json", ".jsonl",
+            ".ini", ".cfg", ".usda", ".pdf", ".cpp", ".h", ".hpp", ".ogn"}
+USD_KEYWORDS = ("physx", "physics", "collision", "rigidbody", "articulation", "joint",
+                "solver", "contact", "restoffset", "gravity", "friction", "density",
+                "velocity", "mass", "stiffness", "damping", "timecodes", "drive")
+# Prioritize high-value sections without requiring fragile, version-specific URLs.
+DOC_KEYWORDS = ("physics", "physx", "joint", "collision", "solver", "rigid", "articulation",
+                "material", "friction", "robot", "tuning", "performance", "optimization",
+                "sim", "api", "python", "usd", "schema", "sensor", "actuator", "reward",
+                "scene", "contact", "installation", "migration", "release", "config",
+                "workflow", "troubleshooting", "omni", "control", "tutorial", "tutorials",
+                "experimental", "deformable")
+HEADERS = {"User-Agent": "IsaacPhysicsExpert/0.2 (local research; respect site rate limits)"}
+
+
+def get_collection(reset: bool = False):
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(DB_DIR))
+    if reset:
+        try:
+            client.delete_collection(COLLECTION)
+        except Exception:  # absent collection
+            pass
+    return client.get_or_create_collection(name=COLLECTION, metadata={"hnsw:space": "cosine"})
+
+
+def canonical_url(url: str) -> str:
+    u = urlparse(url)
+    return urlunparse((u.scheme, u.netloc, u.path, "", "", ""))
+
+
+def in_source(url: str, base: str) -> bool:
+    """Never follow external links or leave a versioned documentation subtree."""
+    a, b = urlparse(url), urlparse(base)
+    return (a.scheme == "https" and a.netloc == b.netloc and
+            (a.path == b.path.rstrip("/") or a.path.startswith(b.path)))
+
+
+def prioritize(url: str, seeds: set[str]) -> tuple[int, int, str]:
+    path = urlparse(url).path.lower()
+    seed = 0 if url in seeds else 1
+    useful = sum(1 for word in DOC_KEYWORDS if word in path)
+    # Prefer specific physics/config/API pages, after seed documents.
+    return (seed, -useful, path)
+
+
+def parse_links(body: str, url: str, base: str) -> list[str]:
+    """HTML sidebar+article links, or Markdown URLs from the official llms.txt index."""
+    links = []
+    if urlparse(url).path.endswith("llms.txt") or body.lstrip().startswith("# LLM"):
+        candidates = re.findall(r"\[[^\]]+\]\(([^)\s]+)", body)
+        candidates.extend(re.findall(r"https?://[^\s<>\]]+", body))
+    else:
+        soup = BeautifulSoup(body, "html.parser")
+        candidates = [a.get("href", "") for a in soup.select("a[href]")]
+    for href in candidates:
+        if not href or href.startswith(("mailto:", "javascript:", "#")):
+            continue
+        target = canonical_url(urljoin(url, href.strip().strip('"').rstrip(')>,.;')))
+        if not in_source(target, base):
+            continue
+        path = urlparse(target).path.lower()
+        if (path.endswith((".html", ".htm", ".md", ".txt")) or
+                not Path(path).suffix):
+            links.append(target)
+    return list(dict.fromkeys(links))
+
+
+def extract_page(body: str, url: str, content_type: str) -> tuple[str, str]:
+    if urlparse(url).path.endswith(".md") or "markdown" in content_type:
+        return url.rsplit("/", 1)[-1], body[:180_000]
+    soup = BeautifulSoup(body, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else url
+    article = (soup.select_one("article") or soup.select_one("main .bd-content") or
+               soup.select_one("main") or soup.select_one("[role=main]"))
+    if article is None:
+        raise ValueError("No article/main section found")
+    for node in article.select("nav, footer, header, aside, script, style, .bd-sidebar, .toc, .sphinxsidebar"):
+        node.decompose()
+    content = re.sub(r"\n{3,}", "\n\n", article.get_text("\n", strip=True))
+    if len(content) < 120:
+        raise ValueError("Page has little readable content")
+    return title, content[:180_000]
+
+
+def download_document(session: requests.Session, url: str) -> tuple[str, str, str]:
+    response = session.get(url, timeout=(10, 35), allow_redirects=True)
+    response.raise_for_status()
+    if urlparse(response.url).scheme != "https":
+        raise ValueError("Insecure redirect")
+    ctype = response.headers.get("content-type", "").lower()
+    if not ("html" in ctype or "text" in ctype or "markdown" in ctype):
+        raise ValueError(f"Unsupported content type: {ctype}")
+    if len(response.content) > 5_000_000:
+        raise ValueError("Page too large")
+    return response.text, response.url, ctype
+
+
+def usd_relevant_text(raw: str) -> str:
+    selected = ["ASCII USDA excerpts ONLY; references not resolved; verify in Isaac Sim."]
+    latest_prim = ""
+    for line_no, line in enumerate(raw.splitlines(), 1):
+        trimmed = line.strip()
+        if re.match(r'^(def|over|class)\s+\w+\s+"', trimmed):
+            latest_prim = trimmed[:220]
+        if any(word in trimmed.lower() for word in USD_KEYWORDS):
+            selected.append(f"line {line_no} | near {latest_prim} | {trimmed[:400]}")
+        if len(selected) > 5500:
+            selected.append("... extra lines omitted")
+            break
+    return "\n".join(selected)
+
+
+def file_text(path: Path) -> str:
+    if path.suffix.lower() == ".pdf":
+        reader = PdfReader(str(path))
+        return "\n".join((page.extract_text() or "") for page in reader.pages[:250])[:600_000]
+    if path.suffix.lower() == ".usda":
+        return usd_relevant_text(path.read_text(encoding="utf-8", errors="replace"))
+    return path.read_text(encoding="utf-8", errors="replace")[:600_000]
+
+
+def walk_sources(folder: Path):
+    for base, dirs, names in os.walk(folder):
+        dirs[:] = [d for d in dirs if d not in IGNORE_DIRS and not d.startswith(".")]
+        for name in names:
+            path = Path(base) / name
+            if path.is_symlink() or name.startswith(".") or path.suffix.lower() not in SUFFIXES:
+                continue
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            if size <= (40_000_000 if path.suffix.lower() == ".usda" else 2_000_000):
+                yield path
+
+
+def insert_source(collection, source: str, title: str, version: str,
+                  product: str, content: str, kind: str, family: str,
+                  lab_version: str = "none") -> int:
+    parts = chunks(content)
+    if not parts:
+        return 0
+    source_id = sha256(f"{version}|{source}".encode()).hexdigest()[:24]
+    # Do not delete existing chunks before embeddings succeed (safe incremental updates).
+    vectors = []
+    for start in range(0, len(parts), 16):
+        vectors.extend(ollama.embed(model=EMBED_MODEL, input=parts[start:start + 16]).embeddings)
+    old = collection.get(where={"source_id": source_id}, include=[])
+    old_ids = old.get("ids", [])
+    if old_ids:
+        collection.delete(ids=old_ids)
+    stamp = datetime.now(timezone.utc).isoformat()
+    for start in range(0, len(parts), 80):
+        batch = parts[start:start + 80]
+        ids = [f"{source_id}-{i}" for i in range(start, start + len(batch))]
+        metadata = [dict(source=source, source_id=source_id, title=title,
+                         version=version, product=product, family=family,
+                         lab_version=lab_version, kind=kind, chunk=i, indexed_at=stamp)
+                    for i in range(start, start + len(batch))]
+        collection.upsert(ids=ids, embeddings=vectors[start:start + len(batch)],
+                          documents=batch, metadatas=metadata)
+    return len(parts)
+
+
+def crawl_group(collection, group: dict, max_pages: int | None = None,
+                pause: float = 0.12, refresh: bool = False):
+    base = group["base"]
+    seed_urls = {canonical_url(urljoin(base, seed)) for seed in group["seeds"]}
+    pending = deque(sorted(seed_urls))
+    queued = set(pending)
+    visited = set()
+    pages, pieces, errors, attempts = 0, 0, 0, 0
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    cap = max_pages if max_pages is not None else group["max_pages"]
+    while pending and pages < cap and attempts < (cap * 12 + len(seed_urls)):
+        url = pending.popleft()
+        attempts += 1
+        if url in visited:
+            continue
+        visited.add(url)
+        try:
+            raw, final_url, ctype = download_document(session, url)
+            if not in_source(final_url, base):
+                raise ValueError("Redirect left version-specific source")
+            for link in sorted(parse_links(raw, final_url, base), key=lambda p: prioritize(p, seed_urls)):
+                if link not in queued and link not in visited:
+                    queued.add(link)
+                    pending.append(link)
+            # A site-provided llms.txt is an index of links, not a document article.
+            if urlparse(final_url).path.endswith("llms.txt"):
+                continue
+            # Limit irrelevant links from large documentation sidebars.
+            relpath = urlparse(url).path[len(urlparse(base).path):].lower()
+            if url not in seed_urls and not any(k in relpath for k in DOC_KEYWORDS):
+                continue
+            title, content = extract_page(raw, final_url, ctype)
+            source_id = sha256(f"{group['version']}|{canonical_url(final_url)}".encode()).hexdigest()[:24]
+            if not refresh and collection.get(where={"source_id": source_id}, limit=1, include=[])["ids"]:
+                pages += 1
+                print(f"[cached] {group['id']} {pages}/{cap}: {title[:70]}", flush=True)
+                continue
+            n = insert_source(collection, canonical_url(final_url), title,
+                              group["version"], group["product"], content,
+                              "official_docs", group["family"], group.get("lab_version", "none"))
+            pages += 1
+            pieces += n
+            print(f"[doc] {group['id']} {pages}/{cap}: {title[:67]} | {n} chunks", flush=True)
+        except (requests.RequestException, ValueError, RuntimeError) as ex:
+            errors += 1
+            print(f"[warn] {url}: {str(ex)[:140]}", flush=True)
+        if pause:
+            time.sleep(pause)
+    print(f"[done] {group['id']}: pages={pages}, new_chunks={pieces}, errors={errors}", flush=True)
+    return pages, pieces, errors
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build a version-aware local knowledge base")
+    parser.add_argument("--docs", action="store_true", help="Index official online documentation")
+    parser.add_argument("--oht", type=Path, help="Local OHT repository")
+    parser.add_argument("--dog", type=Path, help="Local Isaac Lab repository")
+    parser.add_argument("--notes", type=Path, help="Local notes directory")
+    parser.add_argument("--reset", action="store_true", help="Drop the v2 index before indexing")
+    parser.add_argument("--refresh", action="store_true", help="Re-download/re-embed indexed pages")
+    parser.add_argument("--max-pages", type=int, default=None, help="Max pages per documentation group (e.g. 15 quick, 100 broad)")
+    parser.add_argument("--only", nargs="*", help="Only these source group IDs, e.g. isaac-sim-5.1.0")
+    parser.add_argument("--list-sources", action="store_true", help="List documentation groups without downloading")
+    parser.add_argument("--pause", type=float, default=0.12, help="Seconds between HTTP requests")
+    parser.add_argument("--oht-version", default="5.1.0")
+    parser.add_argument("--dog-version", default="6.1.0")
+    args = parser.parse_args()
+    groups = json.loads((ROOT / "config" / "sources.json").read_text(encoding="utf-8"))
+    if args.list_sources:
+        for group in groups:
+            print(f"{group['id']:28s} {group['version']:6s} {group.get('lab_version', ''):10s} {group['base']}")
+        return
+    if args.max_pages is not None and args.max_pages < 1:
+        parser.error("--max-pages must be >= 1")
+    if args.only and not args.docs:
+        parser.error("--only requires --docs")
+    if not any((args.docs, args.oht, args.dog, args.notes)):
+        parser.error("Select --docs, --oht, --dog, or --notes")
+    # Fail fast with a helpful explanation instead of issuing hundreds of warnings.
+    try:
+        ollama.embed(model=EMBED_MODEL, input="Isaac Sim Physics")
+    except Exception as exc:
+        parser.error(f"Ollama Embedding unavailable ({EMBED_MODEL}). Run: ollama pull {EMBED_MODEL}. Details: {exc}")
+    collection = get_collection(reset=args.reset)
+    total, errors = 0, 0
+    if args.docs:
+        selected = [g for g in groups if not args.only or g["id"] in args.only]
+        if args.only and len(selected) != len(set(args.only)):
+            parser.error("Unknown source ID. Run --list-sources")
+        for group in selected:
+            _, n, e = crawl_group(collection, group, max_pages=args.max_pages,
+                                  pause=max(0, args.pause), refresh=args.refresh)
+            total += n
+            errors += e
+    for directory, version, product, family in [
+        (args.oht, args.oht_version, "OHT project", "user_project"),
+        (args.dog, args.dog_version, "Dog / Isaac Lab project", "user_project"),
+        (args.notes, "all", "Private engineering notes", "user_note"),
+    ]:
+        if directory is None:
+            continue
+        if not directory.is_dir():
+            errors += 1
+            print(f"[warn] Missing folder: {directory}", flush=True)
+            continue
+        paths = list(walk_sources(directory))
+        print(f"[info] {directory}: {len(paths)} supported text files", flush=True)
+        for i, path in enumerate(paths, 1):
+            try:
+                content = file_text(path)
+                if len(content.strip()) < 30:
+                    continue
+                n = insert_source(collection, str(path.resolve()), path.name, version,
+                                  product, content, "local_project", family)
+                total += n
+                if i % 20 == 0:
+                    print(f"[files] {i}/{len(paths)} | new chunks: {total}", flush=True)
+            except Exception as ex:
+                errors += 1
+                print(f"[warn] {path}: {str(ex)[:140]}", flush=True)
+    print(f"All done. New chunks={total}; index_total={collection.count()}; warnings={errors}", flush=True)
+    if errors:
+        print("WARNING: Missing pages reduce coverage. See [warn] lines; no automatic fallback to wrong versions.")
+
+
+if __name__ == "__main__":
+    main()

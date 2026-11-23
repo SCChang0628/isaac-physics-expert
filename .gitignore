@@ -1,0 +1,27 @@
+# Generated or private data — never push these to GitHub
+.venv/
+.venv-*/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+.env
+.env.*
+*.key
+*.pem
+*.log
+.DS_Store
+
+# User/project and downloaded content
+data/
+chroma_db/
+knowledge/
+models/
+local_projects/
+exports/
+*.usd
+*.usdc
+*.usdz
+*.usda
+
+# Only source code and short, sanitized example notes are tracked.

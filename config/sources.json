@@ -1,0 +1,82 @@
+[
+  {
+    "id": "isaac-sim-5.1.0", "family": "isaac_sim", "version": "5.1.0", "product": "Isaac Sim",
+    "base": "https://docs.isaacsim.omniverse.nvidia.com/5.1.0/", "max_pages": 85,
+    "seeds": ["index.html", "physics/index.html", "physics/simulation_fundamentals.html", "reference_material/sim_performance_optimization_handbook.html", "robot_setup/asset_structure.html", "py/source/extensions/isaacsim.core.api/docs/index.html", "python_scripting/core_api_overview.html", "overview/release_notes.html"]
+  },
+  {
+    "id": "isaac-sim-6.0.0", "family": "isaac_sim", "version": "6.0.0", "product": "Isaac Sim",
+    "base": "https://docs.isaacsim.omniverse.nvidia.com/6.0.0/", "max_pages": 85,
+    "seeds": ["index.html", "physics/index.html", "physics/simulation_fundamentals.html", "reference_material/sim_performance_optimization_handbook.html", "overview/release_notes.html", "py/source/extensions/isaacsim.core.api/docs/index.html"]
+  },
+  {
+    "id": "isaac-sim-6.0.1", "family": "isaac_sim", "version": "6.0.1", "product": "Isaac Sim",
+    "base": "https://docs.isaacsim.omniverse.nvidia.com/6.0.1/", "max_pages": 70,
+    "seeds": ["index.html", "physics/index.html", "physics/simulation_fundamentals.html", "reference_material/sim_performance_optimization_handbook.html", "overview/release_notes.html"]
+  },
+  {
+    "id": "isaac-sim-6.1.0", "family": "isaac_sim", "version": "6.1.0", "product": "Isaac Sim",
+    "base": "https://docs.isaacsim.omniverse.nvidia.com/6.1.0/", "max_pages": 85,
+    "seeds": ["index.html", "physics/index.html", "physics/new_physics_engine.html", "reference_material/sim_performance_optimization_handbook.html", "overview/release_notes.html", "py/source/extensions/isaacsim.core.api/docs/index.html"]
+  },
+  {
+    "id": "isaac-sim-6.2.0", "family": "isaac_sim", "version": "6.2.0", "product": "Isaac Sim",
+    "base": "https://docs.isaacsim.omniverse.nvidia.com/6.2.0/", "max_pages": 85,
+    "seeds": ["index.html", "physics/index.html", "reference_material/sim_performance_optimization_handbook.html", "installation/compatibility.html", "overview/release_notes.html", "py/source/extensions/isaacsim.core.api/docs/index.html"]
+  },
+  {
+    "id": "isaac-lab-2.3", "family": "isaac_lab", "version": "5.1.0", "lab_version": "2.3.x", "product": "Isaac Lab",
+    "base": "https://docs.nvidia.com/isaaclab/2.3/", "max_pages": 85,
+    "seeds": ["llms.txt", "isaac-lab/installation", "isaac-lab/quickstart", "references/release-notes"]
+  },
+  {
+    "id": "isaac-lab-3.0-beta", "family": "isaac_lab", "version": "6.0.0", "lab_version": "3.0.0-beta", "product": "Isaac Lab",
+    "base": "https://isaac-sim.github.io/IsaacLab/v3.0.0-beta/", "max_pages": 65,
+    "seeds": ["source/setup/installation/index.html", "source/refs/changelog.html", "index.html"]
+  },
+  {
+    "id": "isaac-lab-3.0-beta2", "family": "isaac_lab", "version": "6.0.1", "lab_version": "3.0.0-beta2", "product": "Isaac Lab",
+    "base": "https://isaac-sim.github.io/IsaacLab/v3.0.0-beta2/", "max_pages": 65,
+    "seeds": ["source/setup/installation/index.html", "source/refs/changelog.html", "index.html"]
+  },
+  {
+    "id": "isaac-lab-3.0-ea", "family": "isaac_lab", "version": "6.1.0", "lab_version": "3.0.0-EA", "product": "Isaac Lab",
+    "base": "https://isaac-sim.github.io/IsaacLab/v3.0.0-EA/", "max_pages": 75,
+    "seeds": ["source/setup/installation/index.html", "source/refs/release_notes.html", "index.html"]
+  },
+  {
+    "id": "isaac-lab-3.0-ga", "family": "isaac_lab", "version": "6.2.0", "lab_version": "3.0.0-GA", "product": "Isaac Lab",
+    "base": "https://docs.nvidia.com/isaaclab/3.0/", "max_pages": 85,
+    "seeds": ["llms.txt", "isaac-lab/installation", "concepts/isaac-sim-phys-x", "references/release-notes"]
+  },
+  {
+    "id": "openusd-physics", "family": "openusd", "version": "all", "product": "OpenUSD",
+    "base": "https://openusd.org/release/", "max_pages": 35,
+    "seeds": ["api/usd_physics_page_front.html", "api/class_usd_physics_rigid_body_a_p_i.html", "api/class_usd_physics_collision_a_p_i.html", "api/class_usd_physics_scene.html", "api/class_usd_physics_joint.html", "api/class_usd_physics_material_a_p_i.html", "api/class_usd_stage.html", "api/class_usd_prim.html", "api/class_sdf_layer.html"]
+  },
+  {
+    "id": "omni-physics-107.3", "family": "omni_physics", "version": "5.1.0", "product": "Omniverse Physics",
+    "base": "https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/", "max_pages": 60,
+    "seeds": ["dev_guide/simulation_config.html", "dev_guide/guides/physics-performance.html", "extensions/index.html"]
+  },
+  {
+    "id": "omni-physics-110.1", "family": "omni_physics", "version": "6.2.0", "product": "Omniverse Physics",
+    "base": "https://docs.omniverse.nvidia.com/kit/docs/omni_physics/110.1/", "max_pages": 60,
+    "seeds": ["dev_guide/simulation_config.html", "dev_guide/guides/physics-performance.html", "extensions/index.html"]
+  },
+  {
+    "id": "physx-sdk-5.6.1", "family": "physx", "version": "5.1.0", "product": "PhysX SDK",
+    "base": "https://nvidia-omniverse.github.io/PhysX/physx/5.6.1/", "max_pages": 65,
+    "seeds": ["index.html", "docs/RigidBodyDynamics.html", "docs/AdvancedCollisionDetection.html", "docs/GPURigidBodies.html", "docs/Joints.html", "docs/BestPractices.html"]
+  },
+  {
+    "id": "physx-sdk-reference", "family": "physx", "version": "all", "product": "PhysX SDK (reference; verify SDK version)",
+    "base": "https://nvidia-omniverse.github.io/PhysX/physx/5.8.0/", "max_pages": 55,
+    "seeds": ["index.html", "docs/RigidBodyDynamics.html", "docs/AdvancedCollisionDetection.html", "docs/GPURigidBodies.html", "docs/Joints.html", "docs/BestPractices.html"]
+  },
+  {
+    "id": "usd-schema-physics", "family": "omni_physics", "version": "all", "product": "Omniverse USD Physics Schema",
+    "base": "https://docs.omniverse.nvidia.com/kit/docs/omni_usd_schema_physics/latest/", "max_pages": 35,
+    "seeds": ["index.html"]
+  }
+]
