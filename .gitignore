@@ -11,6 +11,7 @@ __pycache__/
 *.pem
 *.log
 .DS_Store
+.vscode/
 
 # User/project and downloaded content
 data/

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import chromadb
 import ollama
-from expert.common import CHAT_MODEL, COLLECTION, DB_DIR, EMBED_MODEL
+from expert.common import CHAT_MODEL, COLLECTION, DB_DIR, EMBED_MODEL, prepare_docs_index
 
 SIM_VERSIONS = ("5.1.0", "6.0.0", "6.0.1", "6.1.0", "6.2.0")
 LAB_FOR_SIM = {
@@ -49,6 +49,7 @@ def _query(collection, embedding, count: int, where: dict) -> list[dict]:
 def retrieve(question: str, version: str = "5.1.0", top_k: int = 12) -> list[dict]:
     if version not in SIM_VERSIONS:
         raise ValueError(f"Unsupported Isaac Sim version: {version}")
+    prepare_docs_index()
     chroma = chromadb.PersistentClient(path=str(DB_DIR))
     try:
         collection = chroma.get_collection(COLLECTION)

@@ -3,11 +3,12 @@ from __future__ import annotations
 import argparse
 import sys
 import chromadb
-from expert.common import CHAT_MODEL, COLLECTION, DB_DIR
+from expert.common import CHAT_MODEL, COLLECTION, DB_DIR, prepare_docs_index
 from expert.recommend import LAB_FOR_SIM, SIM_VERSIONS, recommend
 
 
 def show_stats():
+    prepare_docs_index()
     client = chromadb.PersistentClient(path=str(DB_DIR))
     try:
         coll = client.get_collection(COLLECTION)

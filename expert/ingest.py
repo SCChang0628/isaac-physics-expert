@@ -21,7 +21,7 @@ import requests
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 
-from expert.common import DB_DIR, COLLECTION, EMBED_MODEL, ROOT, chunks
+from expert.common import DB_DIR, COLLECTION, EMBED_MODEL, ROOT, chunks, prepare_docs_index
 
 IGNORE_DIRS = {".git", ".venv", ".venv-train", "venv", "build", "install", "node_modules",
                "__pycache__", ".pytest_cache", "chroma_db", "results", "logs", "cache"}
@@ -41,6 +41,8 @@ HEADERS = {"User-Agent": "IsaacPhysicsExpert/0.2 (local research; respect site r
 
 
 def get_collection(reset: bool = False):
+    if not reset:
+        prepare_docs_index()
     DB_DIR.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(DB_DIR))
     if reset:
