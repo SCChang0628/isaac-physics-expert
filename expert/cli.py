@@ -18,9 +18,13 @@ def show_stats():
 
 
 def answer(question, version, model):
-    print(f"\n[Isaac Sim {version} | Isaac Lab {LAB_FOR_SIM[version]} | {model}]\n")
+    def show_generation_start():
+        print("模型正在產生回答…", file=sys.stderr, flush=True)
+
+    print(f"\n[Isaac Sim {version} | Isaac Lab {LAB_FOR_SIM[version]} | {model}]\n", flush=True)
+    print("正在搜尋知識庫…", file=sys.stderr, flush=True)
     try:
-        r = recommend(question, version, model=model)
+        r = recommend(question, version, model=model, on_generation_start=show_generation_start)
     except Exception as exc:
         print(f"[錯誤] {exc}")
         print("確認 Ollama 已啟動、模型已下載、知識庫已索引。")
